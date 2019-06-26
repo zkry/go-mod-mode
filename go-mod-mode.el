@@ -4,6 +4,8 @@
 
 ;;;###autoload
 
+;;; Code:
+
 ;; TODO v1.1.5-pre doesn't match.
 (makunbound 'go-mod--source-regexp)
 (makunbound 'go-mod-mode-hook)
@@ -114,6 +116,7 @@
 	   'go-mod-eldoc-function)
   (go-mod--initialize-version-cache)
   (set (make-local-variable 'go-mod--replacement-store) '())
+  (add-hook 'after-save-hook 'go-mod--get-modules t t)
   (run-hooks 'go-mod-mode-hook))
 
 (defun go-mod-sum-mode ()
@@ -143,25 +146,9 @@
 	   (hash-entry (progn
 					 (message (format "===cache hit: %s===" mod-name))
 					 (go-mod--eldoc-format-version-list mod-name))) ; display from cache
-	   (t (let ((cmd-output (split-string
-						   (shell-command-to-string (concat "go list -m -u " mod-name))
-						   "\n")))
-			(message "==cache-miss==")
-			;; Remove the garbage lines at the beginning of cmd output.
-			(while (and cmd-output (or (string-prefix-p "go:" (nth 0 cmd-output))
-									   (string-prefix-p "cmd output: go:" (nth 0 cmd-output))
-									   (equal "" (nth 0 cmd-output))))
-			  (message (nth 0 cmd-output))
-			  (setq cmd-output (cdr cmd-output)))
-            
-			;; If command remains process it, else return blank.
-            (if cmd-output
-				(let ((mod-ver-upg (split-string (nth 0 cmd-output) " ")))
-				  (go-mod--add-to-version-cache mod-name
-												(nth 1 mod-ver-upg)
-												(nth 2 mod-ver-upg))
-				  (go-mod--eldoc-format-version-list mod-name))
-			  "Error in go.mod file")))))))
+	   (t (progn
+			(message "===cache miss===")
+			""))))))
 
 (defun go-mod--eldoc-format-version-list (mod-name)
   "Return a string for displaying MODULE information."
@@ -199,10 +186,23 @@
 ;;; data extraction code
 ;;; =====================
 
+(defun go-mod--get-curent-module ()
+  "Return the current module string."
+  (string-trim (shell-command-to-string "go list -m")))
+
 (defun go-mod--get-modules ()
   "Get all current modules in a list."
   (when (not (go-mod--mod-enabled)) (error "Go modules not turned on"))
   (mapcar 'split-string (process-lines "go" "list" "-m" "all")))
+
+(defun go-mod--get-hack-replacements ()
+  "Get all modules which have been copied locally via gohack."
+  (when (not (go-mod--mod-enabled)) (error "Go modules not turned on"))
+  ;; Get the output from the `go list -m all' command, having a
+  ;; replacement (ie `=>''), and containing the directory `gohack'.
+  (mapcar (function (lambda (line) (split-string line " => " t)))
+		  (seq-filter (function (lambda (str) (string-match-p "=>.*/gohack/" str)))
+												(process-lines "go" "list" "-m" "all"))))
 
 (defun go-mod--get-replacements ()
   "Get all of the replacements in form of alist from current go mod buffer."
@@ -219,8 +219,11 @@
 (defun go-mod--get-module-information ()
   "Get all upgradable modules."
   (when (not (go-mod--mod-enabled)) (error "Go modules not turned on"))
+  (with-current-buffer "*go-mod-upgradable*"
+	(erase-buffer))
   (make-process :name "go-mod-upgradable"
 				:buffer "*go-mod-upgradable*"
+				:stderr "*go-mod-upgradable*"
 				:command '("go" "list" "-u" "-m" "all")
 				:connection-type 'pipe
 				:sentinel #'go-mod--get-module-information-sentinel))
@@ -249,7 +252,28 @@
 		 (split-string (buffer-string) "\n")) ; Process each line of buffer.
 		(kill-buffer)))))
 
+(defun go-mod--get-module-upgrade (mod-name)
+  "Return the version that MOD-NAME can upgrade to."
+  (when (not (go-mod--mod-enabled)) (error "Go modules not turned on"))
+  (message mod-name)
+  (let* ((command (format "go list -m -u %s" (shell-quote-argument mod-name)))
+		(output (shell-command-to-string command)))
+	(and (string-match "\\[\\(.*\\)\\]" output)
+		 (match-string 1 output))))
+
+(defun go-mod--get-module-versions (mod-name)
+  "Return a list of the versions for a particular MOD-NAME."
+  (cdr (split-string (string-trim (shell-command-to-string (format "go list -m -versions %s" (shell-quote-argument mod-name)))) nil t)))
 ;;; end data extraction code
+
+(defun go-mod--module-on-line ()
+  "Return the module string that the pointer is on."
+  (let ((line (buffer-substring-no-properties (line-beginning-position) (line-end-position))))
+	(if (not (string-match go-mod--source-regexp line))
+		nil
+	  (progn
+		(string-match go-mod--source-regexp line)
+		(match-string 0 line)))))
 
 ;;; ==========================
 ;;; general commands
@@ -264,6 +288,104 @@
   "Return if go-mod is supported."
   (and (equal "on" (getenv "GO111MODULE"))
 	   (not (equal "command-line-arguments\n" (shell-command-to-string "go list -m")))))
+
+(defun go-mod-create-local ()
+  "Clones the selected module to directory specified."
+  (interactive "")
+
+  (when (not (go-mod--mod-enabled))
+	(error "Go modules not enabled"))
+
+  (let* ((mod-name (or (go-mod--module-on-line) (go-mod--prompt-non-hack-modules)))
+		 (command (and mod-name (format "gohack get %s" (shell-quote-argument mod-name)))))
+	(when (not mod-name) (error "No module on current line"))
+	(message (shell-command-to-string command))))
+
+(defun go-mod-undo-local ()
+  "Revert the usage of local module by calling `gohack undo ...'."
+  (interactive "")
+
+  (when (not (go-mod--mod-enabled))
+	(error "Go modules not enabled"))
+
+  (let* ((mod-name (or (go-mod--module-on-line) (go-mod--prompt-hack-replacements)))
+		 (command (and mod-name (format "gohack undo %s" (shell-quote-argument mod-name)))))
+	(message (shell-command-to-string command))))
+
+;;; TODO: When multiple things are upgraded maybe it will be best to somehow visualize all of it.
+(defun go-mod-upgrade ()
+  "Upgrade the selected module."
+  (interactive "")
+  (when (not (go-mod--mod-enabled))
+	(error "Go modules not enabled"))
+
+  (let* ((mod-name (or (go-mod--module-on-line) (go-mod--prompt-all-modules)))
+		 (command (and mod-name (format "go get %s@latest" (shell-quote-argument mod-name))))
+		 (upgrade-to (go-mod--get-module-upgrade mod-name)))
+	(if (not upgrade-to)
+		(message "Module is already at latest version")
+	  (when (y-or-n-p (format "Do you want to upgrade %s to %s? " mod-name upgrade-to))
+		(message "Please wait while module is being updated.")
+		(message (shell-command-to-string command))))))
+
+(defun go-mod-upgrade-all ()
+  "Upgrade all modules in go.mod."
+  (interactive "")
+  (compilation-start "go get -u -m all"))
+
+(defun go-mod-get ()
+  "List all of the available versions of module and select version to set it at."
+  (interactive "")
+  (when (not (go-mod--mod-enabled))
+	(error "Go modules not enabled"))
+
+  (let* ((mod-name (or (go-mod--module-on-line) (go-mod--prompt-all-modules)))
+		 (versions (go-mod--get-module-versions mod-name)))
+	;; fail if no versions for the module are available
+	(if (= 0 (length versions))
+		(message (format "Module %s has no other available versions." mod-name))
+	  (let* ((selected-version (ido-completing-read "Select version: " versions))
+			 (command (format "go get %s@%s" mod-name (shell-quote-argument selected-version))))
+		(message (shell-command-to-string command))))))
+
+(defun go-mod--prompt-all-modules ()
+  "Prompt the user to select from list of all modules."
+  (ido-completing-read "Select module: " (go-mod--get-modules)))
+
+(defun go-mod--prompt-hack-replacements ()
+  "Prompt the user for list of modules that have been replaced by gohack."
+  (let* ((replacements (go-mod--get-hack-replacements))
+		 (modules (mapcar 'car replacements)))
+	(if (= 0 (length modules))
+		(message "There are no local modules")
+	  (let* ((mod-name-version (ido-completing-read "Module to undo: " modules))
+			 (mod-name (nth 0 (split-string mod-name-version))))
+		mod-name))))
+
+(defun go-mod--prompt-non-hack-modules ()
+  "Prompt the user for list of modules that have not been replaced by gohack."
+  (let* ((replacements (go-mod--get-hack-replacements))
+		 (all-replacements (mapconcat 'identity replacements "|"))
+		 (current-mod (go-mod--get-curent-module))
+		 (modules (go-mod--get-modules)))
+	;; Filter the modules based off the replacemens.
+	(setq modules (seq-filter (function (lambda (mod)
+										  (and (not (string-match-p (regexp-quote (nth 0 mod))
+																	all-replacements))
+											   (not (equal (nth 0 mod)
+														   current-mod)))))
+							  modules))
+	(setq modules (mapcar 'car modules))
+	(ido-completing-read "Module to copy run locally: " modules)))
+
+(defun match-test ()
+  "Test matching."
+  (let ((line (buffer-substring-no-properties (line-beginning-position) (line-end-position))))
+	(print line)
+	(if (string-match go-mod--source-regexp line)
+		(progn
+		  (print (match-string 0 line)))
+	  (print "not matched"))))
 
 (add-to-list 'auto-mode-alist '("go\\.mod\\'" . go-mod-mode))
 (add-to-list 'auto-mode-alist '("go\\.sum\\'" . go-mod-sum-mode))
