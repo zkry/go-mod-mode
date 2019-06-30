@@ -161,6 +161,25 @@
 	 (if replacement (format " =>\"%s\"" replacement) ""))))
 
 ;;; ====================
+;;; flycheck
+;;; ====================
+
+(flycheck-define-checker go-mod
+  "A syntax checker for go.mod files."
+  :command ("go" "list" "-m")
+  :error-patterns
+  ((error line-start (file-name) ":" line ": " (message) line-end))
+  :modes go-mod-mode)
+
+
+;;;###autoload
+(defun flycheck-go-mod-setup ()
+  "Setup Go-mod support for Flycheck.
+Add `golangci-lint' to `flycheck-checkers'."
+  (interactive)
+  (add-hook 'flycheck-checkers 'go-mod))
+
+;;; ====================
 ;;; version-cache
 ;;; ====================
 
@@ -193,7 +212,8 @@
 (defun go-mod--get-modules ()
   "Get all current modules in a list."
   (when (not (go-mod--mod-enabled)) (error "Go modules not turned on"))
-  (mapcar 'split-string (process-lines "go" "list" "-m" "all")))
+  (ignore-errors
+	(mapcar 'split-string (process-lines "go" "list" "-m" "all"))))
 
 (defun go-mod--get-hack-replacements ()
   "Get all modules which have been copied locally via gohack."
@@ -275,6 +295,21 @@
 		(string-match go-mod--source-regexp line)
 		(match-string 0 line)))))
 
+(defun go-mod--get-dep-graph ()
+  "Return an an a list of each dependency for current module."
+  (when (get-buffer "*dep-edges*") (kill-buffer "*dep-edges*"))
+  (call-process "go" nil "*dep-edges*" t "mod" "graph")
+  (with-current-buffer "*dep-edges*"
+	(goto-char (point-min))
+	(let ((edges '()))
+	  (while (looking-at "[a-zA-Z]")
+		(let* ((fields (split-string (string-trim (thing-at-point 'line))))
+			  (from (car fields))
+			  (to (cadr fields)))
+		  (setq edges (cons (cons from to) edges)))
+		(forward-line))
+	  edges)))
+
 ;;; ==========================
 ;;; general commands
 ;;; ==========================
@@ -328,10 +363,15 @@
 		(message "Please wait while module is being updated.")
 		(message (shell-command-to-string command))))))
 
-(defun go-mod-upgrade-all ()
-  "Upgrade all modules in go.mod."
-  (interactive "")
-  (compilation-start "go get -u -m all"))
+(defun go-mod-upgrade-all (arg)
+  "Upgrade all modules in go.mod.
+
+You can modify this command with a prefix ARG by pressing \\[universal-argument]
+which will only patch-upgrade available modules."
+  (interactive "P")
+  (if (= arg 4)
+	  (compilation-start "go get -u=patch -m all")
+	(compilation-start "go get -u -m all")))
 
 (defun go-mod-get ()
   "List all of the available versions of module and select version to set it at."
@@ -347,6 +387,76 @@
 	  (let* ((selected-version (ido-completing-read "Select version: " versions))
 			 (command (format "go get %s@%s" mod-name (shell-quote-argument selected-version))))
 		(message (shell-command-to-string command))))))
+
+(defun go-mod-graph ()
+  "Display all dependencies in graph form to show inter-dependencies."
+  (interactive "")
+  (when (not (go-mod--mod-enabled))
+	(error "Go modules not enabled"))
+  (let ((mod-name (or (go-mod--module-on-line) (go-mod--prompt-all-modules)))
+		(dep-edges (go-mod--get-dep-graph)))
+	(with-current-buffer (generate-new-buffer "*dep-graph*")
+	  (insert "strict digraph {\nrankdir=LR;\n")
+	  (go-mod--generate-graph-for-mod mod-name dep-edges)
+	  (insert "}")
+	  (call-process-region (point-min) (point-max) "twopi" nil t nil "-Kdot" "-Tpdf" "-o" "mod-graph.pdf")
+	  (kill-buffer (current-buffer)))
+	;; TODO: kill buffer
+	(find-file-other-window "mod-graph.pdf")))
+
+
+
+(defun go-mod--generate-graph-for-mod (mod edges)
+  "Write the graph syntax in buffer for transitive dependencies of MOD in graph EDGES."
+  (insert (format "\"%s\" [fillcolor=\"#00ADDB\", style=filled]\n" mod))
+
+  (let ((added-edges (make-hash-table :test 'equal)))
+	
+	;; Go from the MOD to all leaves.
+	(let ((from-nodes (cons mod nil)))
+	  (while (< 0 (length from-nodes))
+		(dolist (a->b edges)
+		  (when (and (string-prefix-p (car from-nodes) (car a->b))
+					 (not (gethash a->b added-edges)))
+			(insert (format "\"%s\" -> \"%s\"\n"
+							(nth 0 (split-string (car a->b) "@"))
+							(nth 0 (split-string (cdr a->b) "@"))))
+			(puthash a->b t added-edges)
+			(setq from-nodes (append from-nodes (cons (nth 0 (split-string (cdr a->b))) nil)))))
+		(setq from-nodes (cdr from-nodes))))
+
+	;; Go from MOD to the root.
+	;; BOOKMARK: Add hash map and detect loops.
+	(let ((to-nodes (cons mod nil)))
+	  (while (< 0 (length to-nodes))
+		(dolist (a->b edges)
+		  (when (and (string-prefix-p (car to-nodes) (cdr a->b))
+					 (not (gethash a->b added-edges)))
+			(insert (format "\"%s\" -> \"%s\"\n"
+							(nth 0 (split-string (car a->b) "@"))
+							(nth 0 (split-string (cdr a->b) "@"))))
+			(puthash a->b t added-edges)
+			(setq to-nodes (append to-nodes (cons (nth 0 (split-string (car a->b))) nil)))))
+		(setq to-nodes (cdr to-nodes))))))
+
+
+(defun go-mod--genrate-dot-graph ()
+  "Generate dependency graph.
+
+There must be a buffer *dep-graph* containing the output of `go
+mod graph'.  This function is depreciated."
+  (with-current-buffer "*dep-graph*"
+	(goto-char (point-min))
+	(insert "digraph {\n")
+	(while (looking-at "[a-zA-Z]")
+	  ;; modify digraph lines here
+	  (insert "\"")	(skip-chars-forward "^[:blank:]") (insert "\"")
+	  (forward-char) (insert "-> \"")
+	  (goto-char (line-end-position)) (insert "\"")
+	  
+	  (forward-line))
+	(insert "}")
+	(call-process-region (point-min) (point-max) "dot" nil t nil "-Tsvg" "-Kdot" "-o" "dag.svg")))
 
 (defun go-mod--prompt-all-modules ()
   "Prompt the user to select from list of all modules."
@@ -386,6 +496,13 @@
 		(progn
 		  (print (match-string 0 line)))
 	  (print "not matched"))))
+
+;; TODO Add this to readme file
+(projectile-register-project-type 'go-mod '("go.mod")
+                  :compile "go build ./..."
+                  :test "go test ./..."
+                  :run "go run ./..."
+                  :test-suffix "_test.go")
 
 (add-to-list 'auto-mode-alist '("go\\.mod\\'" . go-mod-mode))
 (add-to-list 'auto-mode-alist '("go\\.sum\\'" . go-mod-sum-mode))
