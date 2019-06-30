@@ -1,22 +1,24 @@
-;;; Code: -*- lexical-binding: t -*-
+;;; go-mod-mode.el --- Some conveniences when working with Go modules. -*- lexical-binding: t; -*-
+
+;; Author: Zachary Romero <zacromero@posteo.net>
+;; Url: http://github.com/zkry/go-org-mode
+;; Version: 0.1-pre
+;; Package-Requires: ((emacs "25.1") (flycheck "0.31"))
+;; Keywords: go, golang, modules
 
 ;;; Commentary:
 
-;;;###autoload
+;; `go-mod-mode' adds supprot for working with go.mod files.  This
+;; includes standard syntax highlighting for go.mod and go.sum files
+;; as well as functions for managing a Go module project such as
+;; upgrading a module or creating a local replica of a module.
+;; Lastly, this package contains integrations with various other Emacs
+;; plugins such as eldoc and flycheck.
 
 ;;; Code:
 
+;; TODO Go tool instalation
 ;; TODO v1.1.5-pre doesn't match.
-(makunbound 'go-mod--source-regexp)
-(makunbound 'go-mod-mode-hook)
-(makunbound 'go-mod-mode-map)
-(makunbound 'go-mod-font-lock-keywords-1)
-(makunbound 'go-mod-font-lock-keywords)
-(makunbound 'go-mod-sum-font-lock-keywords)
-(makunbound 'go-mod-sum-font-lock-keywords-1)
-(makunbound 'go-mod-mode-syntax-table)
-(fmakunbound 'go-mod-mode)
-
 
 (defconst go-mod--source-regexp
   "\\<[a-z]+\\(?:\\.[a-z]+\\)+/\\(?:[[:alnum:]-_]+/\\)*[[:alnum:]-_]+\\(?:\\.v[0-9][0-9]?\\)?"
@@ -32,15 +34,23 @@
 
 (defvar go-mod--version-store nil
   "Hashmap to store list of modules with corresponding versions.")
-(defvar go-mod--replacement-store nil
-  "Alist to store list of modules with corresponding replacement")
 
-;;; go mod keybindings map
+(defvar go-mod--replacement-store nil
+  "Alist to store list of modules with corresponding replacement.")
+
+(let ((m (define-prefix-command 'go-mod-map)))
+  (define-key m "l" #'go-mod-create-local)
+  (define-key m "r" #'go-mod-undo-local)
+  (define-key m "u" #'go-mod-upgrade)
+  (define-key m "U" #'go-mod-upgrade-all)
+  (define-key m "g" #'go-mod-get)
+  (define-key m "a" #'go-mod-graph))
+
 (defvar go-mod-mode-map
-  (let ((map (make-keymap)))
-;;    (define-key map "\C-j" 'newline-and-indent)
-    map)
-  "Keymap for WPDL major mode.")
+  (let ((map (make-sparse-keymap)))
+	(define-key map "\C-c\C-o" 'go-mod-map)
+	map)
+  "The keymap used when `go-mod-minor-mode' or `go-mod-mode' is active.")
 
 ;;; go mod font lock keywords
 (defconst go-mod-font-lock-keywords-1
@@ -108,7 +118,6 @@
   (interactive)
   (kill-all-local-variables)
   (set-syntax-table go-mod-mode-syntax-table)
-  (use-local-map go-mod-mode-map)
   (set (make-local-variable 'font-lock-defaults) '(go-mod-font-lock-keywords))
   (set (make-local-variable 'indent-line-function) 'go-mod-indent-line)
   (setq major-mode 'go-mod-mode)
@@ -117,6 +126,7 @@
   (go-mod--initialize-version-cache)
   (set (make-local-variable 'go-mod--replacement-store) '())
   (add-hook 'after-save-hook 'go-mod--get-modules t t)
+  (use-local-map 'go-mod-mode-map)
   (run-hooks 'go-mod-mode-hook))
 
 (defun go-mod-sum-mode ()
@@ -124,10 +134,18 @@
   (interactive)
   (kill-all-local-variables)
   (set-syntax-table (make-syntax-table))
-  (use-local-map (make-keymap))
   (set (make-local-variable 'font-lock-defaults) '(go-mod-sum-font-lock-keywords))
   (setq major-mode 'go-mod-sum-mode)
+  (use-local-map 'go-mod-mode-map)
   (run-hooks 'go-mod-sum-mode-hook))
+
+(define-minor-mode go-mod-minor-mode
+  "Minor mode to add commadns to work with Go modules.
+
+\\{go-mod-mode-map}"
+  :init-value nil
+  :keymap go-mod-mode-map
+  :lighter nil)
 
 ;;; ==================
 ;;; eldoc
@@ -314,6 +332,7 @@ Add `golangci-lint' to `flycheck-checkers'."
 ;;; general commands
 ;;; ==========================
 
+;; TODO
 (defun go-mod-modules ()
   "List all of the current modules."
   (interactive)
@@ -498,11 +517,11 @@ mod graph'.  This function is depreciated."
 	  (print "not matched"))))
 
 ;; TODO Add this to readme file
-(projectile-register-project-type 'go-mod '("go.mod")
-                  :compile "go build ./..."
-                  :test "go test ./..."
-                  :run "go run ./..."
-                  :test-suffix "_test.go")
+;; (projectile-register-project-type 'go-mod '("go.mod")
+;;                   :compile "go build ./..."
+;;                   :test "go test ./..."
+;;                   :run "go run ./..."
+;;                   :test-suffix "_test.go")
 
 (add-to-list 'auto-mode-alist '("go\\.mod\\'" . go-mod-mode))
 (add-to-list 'auto-mode-alist '("go\\.sum\\'" . go-mod-sum-mode))
