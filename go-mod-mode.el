@@ -1,10 +1,26 @@
 ;;; go-mod-mode.el --- Some conveniences when working with Go modules. -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2019 Zachary Romero
+
 ;; Author: Zachary Romero <zacromero@posteo.net>
 ;; Url: http://github.com/zkry/go-org-mode
 ;; Version: 0.1-pre
-;; Package-Requires: ((emacs "25.1") (flycheck "0.31"))
-;; Keywords: go, golang, modules
+;; Package-Requires: ((s "1.6.0") (flycheck "31") (f "0.6.1"))
+
+;; This file is NOT part of GNU Emacs.
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -17,11 +33,13 @@
 
 ;;; Code:
 
+(require 'flycheck)
+
 ;; TODO Go tool instalation
 ;; TODO v1.1.5-pre doesn't match.
 
 (defconst go-mod--source-regexp
-  "\\<[a-z]+\\(?:\\.[a-z]+\\)+/\\(?:[[:alnum:]-_]+/\\)*[[:alnum:]-_]+\\(?:\\.v[0-9][0-9]?\\)?"
+  "\\<[a-z]+\\(?:\\.[a-z]+\\)+\\(/\\(?:[[:alnum:]-_]+/\\)*[[:alnum:]-_]+\\(?:\\.[[:alnum:]-_]+\\)?\\(?:\\.v[0-9][0-9]?\\)?\\)?"
   "Regexp for finding source names such as github.com/lib/pq.")
 
 (defconst go-mod--version-regexp
@@ -60,13 +78,16 @@
    `((,@go-mod--version-regexp) . font-lock-constant-face)
    `((,@go-mod--source-regexp) . font-lock-string-face)))
 
+
 (defconst go-mod-sum-font-lock-keywords-1
   (list
    `((,@go-mod--version-regexp) . font-lock-constant-face)
    `((,@go-mod--source-regexp) . font-lock-string-face)))
 
+(makunbound 'go-mod-sum-font-lock-keywords)
 (defvar go-mod-font-lock-keywords go-mod-font-lock-keywords-1
   "Default highlighting expressions for go mod mode.")
+
 (defvar go-mod-sum-font-lock-keywords go-mod-sum-font-lock-keywords-1
   "Default highlighting expressions for go mod mode.")
 
@@ -126,7 +147,7 @@
   (go-mod--initialize-version-cache)
   (set (make-local-variable 'go-mod--replacement-store) '())
   (add-hook 'after-save-hook 'go-mod--get-modules t t)
-  (use-local-map 'go-mod-mode-map)
+  (use-local-map go-mod-mode-map)
   (run-hooks 'go-mod-mode-hook))
 
 (defun go-mod-sum-mode ()
@@ -136,7 +157,7 @@
   (set-syntax-table (make-syntax-table))
   (set (make-local-variable 'font-lock-defaults) '(go-mod-sum-font-lock-keywords))
   (setq major-mode 'go-mod-sum-mode)
-  (use-local-map 'go-mod-mode-map)
+  (use-local-map go-mod-mode-map)
   (run-hooks 'go-mod-sum-mode-hook))
 
 (define-minor-mode go-mod-minor-mode
@@ -506,15 +527,6 @@ mod graph'.  This function is depreciated."
 							  modules))
 	(setq modules (mapcar 'car modules))
 	(ido-completing-read "Module to copy run locally: " modules)))
-
-(defun match-test ()
-  "Test matching."
-  (let ((line (buffer-substring-no-properties (line-beginning-position) (line-end-position))))
-	(print line)
-	(if (string-match go-mod--source-regexp line)
-		(progn
-		  (print (match-string 0 line)))
-	  (print "not matched"))))
 
 ;; TODO Add this to readme file
 ;; (projectile-register-project-type 'go-mod '("go.mod")
