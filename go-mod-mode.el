@@ -141,6 +141,11 @@
   (set-syntax-table go-mod-mode-syntax-table)
   (set (make-local-variable 'font-lock-defaults) '(go-mod-font-lock-keywords))
   (set (make-local-variable 'indent-line-function) 'go-mod-indent-line)
+
+  ;; Set comment syntax
+  (set (make-local-variable 'comment-start) "//")
+  (set (make-local-variable 'comment-end) "")
+
   (setq major-mode 'go-mod-mode)
   (set (make-local-variable 'eldoc-documentation-function)
 	   'go-mod-eldoc-function)
