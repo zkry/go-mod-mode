@@ -137,6 +137,11 @@
 (defun go-mod-mode ()
   "Major mode for editing go mod files."
   (interactive)
+  (when (not (executable-find "go"))
+	(error "Could not find go tool.  Please see https://golang.org/doc/install to install Go"))
+  (when (not (string-match "go1\\.1[1-9]" (shell-command-to-string "go version")))
+	(error "Current version of Go does not support modules.  Please upgrade to at least version 1.11"))
+
   (kill-all-local-variables)
   (set-syntax-table go-mod-mode-syntax-table)
   (set (make-local-variable 'font-lock-defaults) '(go-mod-font-lock-keywords))
@@ -145,6 +150,14 @@
   ;; Set comment syntax
   (set (make-local-variable 'comment-start) "//")
   (set (make-local-variable 'comment-end) "")
+
+  ;; If GO111MODULE is off or auto, turn on.
+  (when (equal "off" (getenv "GO111MODULE"))
+	(setenv "GO111MODULE" "on"))
+  ;; If GO111MODULE is auto and go version is 1.12, turn on.
+  (when (and (equal "auto" (getenv "GO111MODULE"))
+			 (string-match "go1.12" (shell-command-to-string "go version")))
+	(setenv "GO111MODULE" "on"))
 
   (setq major-mode 'go-mod-mode)
   (set (make-local-variable 'eldoc-documentation-function)
@@ -372,7 +385,8 @@ Add `golangci-lint' to `flycheck-checkers'."
 (defun go-mod-create-local ()
   "Clones the selected module to directory specified."
   (interactive "")
-
+  (when (not (executable-find "gohack"))
+	(error "You must have gohack installed to use this command"))
   (when (not (go-mod--mod-enabled))
 	(error "Go modules not enabled"))
 
@@ -384,7 +398,8 @@ Add `golangci-lint' to `flycheck-checkers'."
 (defun go-mod-undo-local ()
   "Revert the usage of local module by calling `gohack undo ...'."
   (interactive "")
-
+  (when (not (executable-find "gohack"))
+	(error "You must have gohack installed to use this command"))
   (when (not (go-mod--mod-enabled))
 	(error "Go modules not enabled"))
 
@@ -436,8 +451,11 @@ which will only patch-upgrade available modules."
 (defun go-mod-graph ()
   "Display all dependencies in graph form to show inter-dependencies."
   (interactive "")
+  (when (not (executable-find "twopi"))
+	(error "Graphviz not installed.  Please install Graphviz to use this command"))
   (when (not (go-mod--mod-enabled))
 	(error "Go modules not enabled"))
+
   (let ((mod-name (or (go-mod--module-on-line) (go-mod--prompt-all-modules)))
 		(dep-edges (go-mod--get-dep-graph)))
 	(with-current-buffer (generate-new-buffer "*dep-graph*")
