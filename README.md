@@ -40,3 +40,14 @@ This package also adds flychec support for go.mod files showing any syntax error
   (progn
 	(flycheck-go-mod-setup)))
 ```
+
+## Projectile Configuration
+If you are using the Projectile plugin and want it to recognise projects using a go.mod file you can add the following line to your configuration:
+
+```elisp
+(projectile-register-project-type 'go-mod '("go.mod")
+                  :compile "go build ./..."
+                  :test "go test ./..."
+                  :run "go run ./..."
+                  :test-suffix "_test.go")
+```

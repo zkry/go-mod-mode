@@ -528,13 +528,6 @@ mod graph'.  This function is depreciated."
 	(setq modules (mapcar 'car modules))
 	(ido-completing-read "Module to copy run locally: " modules)))
 
-;; TODO Add this to readme file
-;; (projectile-register-project-type 'go-mod '("go.mod")
-;;                   :compile "go build ./..."
-;;                   :test "go test ./..."
-;;                   :run "go run ./..."
-;;                   :test-suffix "_test.go")
-
 (add-to-list 'auto-mode-alist '("go\\.mod\\'" . go-mod-mode))
 (add-to-list 'auto-mode-alist '("go\\.sum\\'" . go-mod-sum-mode))
 
