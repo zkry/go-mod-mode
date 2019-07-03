@@ -208,8 +208,7 @@
 			""))))))
 
 (defun go-mod--eldoc-format-version-list (mod-name)
-  "Return a string for displaying MODULE information."
-  ;; TODO To be implemented.
+  "Return a string for displaying MOD-NAME information."
   (let ((versions (gethash mod-name go-mod--version-store))
 		(replacement (cdr (assoc mod-name go-mod--replacement-store))))
 	(concat
@@ -345,12 +344,15 @@ Add `golangci-lint' to `flycheck-checkers'."
 
 (defun go-mod--module-on-line ()
   "Return the module string that the pointer is on."
-  (let ((line (buffer-substring-no-properties (line-beginning-position) (line-end-position))))
-	(if (not (string-match go-mod--source-regexp line))
-		nil
-	  (progn
-		(string-match go-mod--source-regexp line)
-		(match-string 0 line)))))
+  (if (not (or (equal "go.mod" (file-name-nondirectory (buffer-file-name (current-buffer))))
+			   (equal "go.sum" (file-name-nondirectory (buffer-file-name (current-buffer))))))
+	  nil
+	(let ((line (buffer-substring-no-properties (line-beginning-position) (line-end-position))))
+	  (if (not (string-match go-mod--source-regexp line))
+		  nil
+		(progn
+		  (string-match go-mod--source-regexp line)
+		  (match-string 0 line))))))
 
 (defun go-mod--get-dep-graph ()
   "Return an an a list of each dependency for current module."
@@ -370,12 +372,6 @@ Add `golangci-lint' to `flycheck-checkers'."
 ;;; ==========================
 ;;; general commands
 ;;; ==========================
-
-;; TODO
-(defun go-mod-modules ()
-  "List all of the current modules."
-  (interactive)
-  (when (not (go-mod--mod-enabled)) (error "Go mod must be enabled")))
 
 (defun go-mod--mod-enabled ()
   "Return if go-mod is supported."
