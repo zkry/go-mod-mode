@@ -25,7 +25,7 @@ For the selected Go module, select the version to set the module to from a list 
 
 ### go-mod-graph
 ![dependency chain of logrus](./images/logrus-graph.png)
-Generate a graph of all dependencies for the selected module.
+Generate a graph of all dependencies for the selected module. If you would like this command to output a file format other than PDF, you can set the *go-mod-graph-output* outupt to "png" or another type that Graphviz supports.
 
 ## Eldoc Support
 With Eldoc turned on, after loading all of the version information upon loading the go.mod file, for each module on current line, a list of the current version at, what it is being replaced by, and what version it could be upgraded to is listed.

@@ -46,6 +46,12 @@
   "\\<v[0-9]\\.[0-9]+\\.[0-9]+\\(?:-0.[0-9a-f]+\\)?\\(?:-[0-9a-f]+\\)*\\(?:+incompatible\\)?\\(?:/go.mod\\)?\\>"
   "Regexp for finding version strings.")
 
+(defvar go-mod-graph-output "pdf"
+  "The output type for the dependency graph.
+
+This should be a valid output type that Graphviz can produce such
+as png, gif, pdf, svg.")
+
 ;;; initialize the go mod mode hook.
 (defvar go-mod-mode-hook nil)
 (defvar go-mod-sum-mode-hook nil)
@@ -403,7 +409,6 @@ Add `golangci-lint' to `flycheck-checkers'."
 		 (command (and mod-name (format "gohack undo %s" (shell-quote-argument mod-name)))))
 	(message (shell-command-to-string command))))
 
-;;; TODO: When multiple things are upgraded maybe it will be best to somehow visualize all of it.
 (defun go-mod-upgrade ()
   "Upgrade the selected module."
   (interactive "")
@@ -458,12 +463,10 @@ which will only patch-upgrade available modules."
 	  (insert "strict digraph {\nrankdir=LR;\n")
 	  (go-mod--generate-graph-for-mod mod-name dep-edges)
 	  (insert "}")
-	  (call-process-region (point-min) (point-max) "twopi" nil t nil "-Kdot" "-Tpdf" "-o" "mod-graph.pdf")
+	  (call-process-region (point-min) (point-max) "twopi" nil t nil "-Kdot" (concat "-T" go-mod-graph-output) "-o" (concat "mod-graph." go-mod-graph-output))
 	  (kill-buffer (current-buffer)))
 	;; TODO: kill buffer
 	(find-file-other-window "mod-graph.pdf")))
-
-
 
 (defun go-mod--generate-graph-for-mod (mod edges)
   "Write the graph syntax in buffer for transitive dependencies of MOD in graph EDGES."
