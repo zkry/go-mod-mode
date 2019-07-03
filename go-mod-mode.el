@@ -35,9 +35,6 @@
 
 (require 'flycheck)
 
-;; TODO Go tool instalation
-;; TODO v1.1.5-pre doesn't match.
-
 (defconst go-mod--source-regexp
   "\\<[a-z]+\\(?:\\.[a-z]+\\)+\\(/\\(?:[[:alnum:]-_]+/\\)*[[:alnum:]-_]+\\(?:\\.[[:alnum:]-_]+\\)?\\(?:\\.v[0-9][0-9]?\\)?\\)?"
   "Regexp for finding source names such as github.com/lib/pq.")
@@ -56,12 +53,13 @@ as png, gif, pdf, svg.")
 (defvar go-mod-mode-hook nil)
 (defvar go-mod-sum-mode-hook nil)
 
+;;; Variables to cache requests of go.mod files. (local copy is always made)
 (defvar go-mod--version-store nil
   "Hashmap to store list of modules with corresponding versions.")
-
 (defvar go-mod--replacement-store nil
   "Alist to store list of modules with corresponding replacement.")
 
+;;; Define keymaps
 (let ((m (define-prefix-command 'go-mod-map)))
   (define-key m "l" #'go-mod-create-local)
   (define-key m "r" #'go-mod-undo-local)
@@ -83,7 +81,6 @@ as png, gif, pdf, svg.")
    '("\\<go 1\\.[1-9][0-9]\\>" . font-lock-builtin-face)
    `((,@go-mod--version-regexp) . font-lock-constant-face)
    `((,@go-mod--source-regexp) . font-lock-string-face)))
-
 
 (defconst go-mod-sum-font-lock-keywords-1
   (list
@@ -140,6 +137,7 @@ as png, gif, pdf, svg.")
   "Syntax table for go-mod-mode.")
 
 ;;; go mod entry point
+;;;###autoload
 (defun go-mod-mode ()
   "Major mode for editing go mod files."
   (interactive)
@@ -192,10 +190,8 @@ as png, gif, pdf, svg.")
   :keymap go-mod-mode-map
   :lighter nil)
 
-;;; ==================
-;;; eldoc
-;;; ==================
 
+;;; eldoc supporting functions
 (defun go-mod-eldoc-function ()
   "Return a doc string relating to a Go module."
   (save-excursion
@@ -222,17 +218,14 @@ as png, gif, pdf, svg.")
 	 (if (nth 1 versions) (concat " ↑" (nth 1 versions)) "")
 	 (if replacement (format " =>\"%s\"" replacement) ""))))
 
-;;; ====================
-;;; flycheck
-;;; ====================
 
+;;; flycheck syntax checker
 (flycheck-define-checker go-mod
   "A syntax checker for go.mod files."
   :command ("go" "list" "-m")
   :error-patterns
   ((error line-start (file-name) ":" line ": " (message) line-end))
   :modes go-mod-mode)
-
 
 ;;;###autoload
 (defun flycheck-go-mod-setup ()
@@ -241,10 +234,8 @@ Add `golangci-lint' to `flycheck-checkers'."
   (interactive)
   (add-hook 'flycheck-checkers 'go-mod))
 
-;;; ====================
-;;; version-cache
-;;; ====================
 
+;;; version-cache
 (defun go-mod--add-to-version-cache (module version &optional upgrade)
   "Add MODULE, VERSION, UPGRADE version to cache."
   (message (format "%s>%s>%s" module version upgrade))
@@ -261,12 +252,8 @@ Add `golangci-lint' to `flycheck-checkers'."
   "Reset the version cache."
   (clrhash go-mod--version-store))
 
-;;; end version-cache code
 
-;;; =====================
 ;;; data extraction code
-;;; =====================
-
 (defun go-mod--get-curent-module ()
   "Return the current module string."
   (string-trim (shell-command-to-string "go list -m")))
@@ -375,10 +362,8 @@ Add `golangci-lint' to `flycheck-checkers'."
 		(forward-line))
 	  edges)))
 
-;;; ==========================
-;;; general commands
-;;; ==========================
 
+;;; general commands
 (defun go-mod--mod-enabled ()
   "Return if go-mod is supported."
   (and (equal "on" (getenv "GO111MODULE"))
@@ -488,7 +473,6 @@ which will only patch-upgrade available modules."
 		(setq from-nodes (cdr from-nodes))))
 
 	;; Go from MOD to the root.
-	;; BOOKMARK: Add hash map and detect loops.
 	(let ((to-nodes (cons mod nil)))
 	  (while (< 0 (length to-nodes))
 		(dolist (a->b edges)
