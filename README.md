@@ -11,6 +11,9 @@ Help in any way would be greatly appreciated. Suggestions, bug reports, ideas fo
 ## Usage
 The commands that this package provides is as follows:
 
+### go-mod-explore
+Select a module from a list of all known modules and copy that to a selected location.
+
 ### go-mod-create-local
 Using the tool gohack, create a copy of the selected module in `~/gohack` and update the go.mod file to use the new copy. Before Go modules, if you wanted to debug or test somethgin in one of our dependencies, you could Go into your Go path and modify any package's coad that you wanted. With Go modules this is not possible, and instead a copy must be created and pointed to.
 

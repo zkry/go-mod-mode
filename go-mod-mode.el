@@ -333,7 +333,24 @@ Add `golangci-lint' to `flycheck-checkers'."
 (defun go-mod--get-module-versions (mod-name)
   "Return a list of the versions for a particular MOD-NAME."
   (cdr (split-string (string-trim (shell-command-to-string (format "go list -m -versions %s" (shell-quote-argument mod-name)))) nil t)))
-;;; end data extraction code
+
+(defun go-mod--get-all-modules ()
+  "Return list of all known module names."
+  (when (not (getenv "GOPATH")) (error "GOPATH"))
+  (let* ((mod-root (f-join (string-trim (shell-command-to-string "go env GOPATH"))
+						   "pkg" "mod"))
+		 (dir-queue (list mod-root))
+		 (mods '()))
+	(while dir-queue
+	  (let ((files (directory-files (car dir-queue) t)))
+		(setq dir-queue (cdr dir-queue))
+		(dolist (at-dir files)
+										; Cache is special directory in go mod.
+		  (when (and (not (string-suffix-p "cache" at-dir)) (not (string-suffix-p "." at-dir)))
+			(if (string-match "^.*@v.*$" at-dir)
+				(setq mods (cons at-dir mods))
+			  (setq dir-queue (cons at-dir dir-queue)))))))
+	mods))
 
 (defun go-mod--module-on-line ()
   "Return the module string that the pointer is on."
@@ -368,6 +385,35 @@ Add `golangci-lint' to `flycheck-checkers'."
   "Return if go-mod is supported."
   (and (equal "on" (getenv "GO111MODULE"))
 	   (not (equal "command-line-arguments\n" (shell-command-to-string "go list -m")))))
+
+(defun go-mod-explore ()
+  "Select, copy, and visit module from a list of all known modules."
+  (interactive)
+  (let* ((all-modules (go-mod--get-all-modules))
+		 (short-mod-names (mapcar #'(lambda (long-mod)
+									  (string-match "^.*/pkg/mod/\\(.*\\)$" long-mod)
+									  (let ((res (match-string 1 long-mod)))
+										;; for every letter
+										(dotimes (i 26)
+										  ;; get the upper and lower case of letter
+										  (let ((l-low (char-to-string (+ ?a i)))
+												(l-up (char-to-string (+ ?A i))))
+											;; replace !x with X
+											(setq res (replace-regexp-in-string
+													   (concat "!" l-low)
+													   l-up
+													   res))))
+										(cons res long-mod)))
+								  all-modules))
+		 (selected-mod (ido-completing-read "Select module: " (mapcar #'car short-mod-names)))
+		 (selected-mod-path (cdr (assoc selected-mod short-mod-names)))
+		 (to-directory (read-directory-name "Directory to copy module: ")))
+	(when (not (file-directory-p "~/gohack"))
+	  (shell-command-to-string "mkdir ~/gohack"))
+	(shell-command-to-string (format "cp --no-preserve=mode,ownership -a %s %s"
+									 (shell-quote-argument selected-mod-path)
+									 (shell-quote-argument to-directory)))
+	(message (format "%s copied to %s" selected-mod-path to-directory))))
 
 (defun go-mod-create-local ()
   "Clones the selected module to directory specified."
