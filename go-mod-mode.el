@@ -34,6 +34,9 @@
 ;;; Code:
 
 (require 'flycheck)
+(require 'seq)
+(require 'subr-x)
+(require 'f)
 
 (defconst go-mod--source-regexp
   "\\<[a-z]+\\(?:\\.[a-z]+\\)+\\(/\\(?:[[:alnum:]-_]+/\\)*[[:alnum:]-_]+\\(?:\\.[[:alnum:]-_]+\\)?\\(?:\\.v[0-9][0-9]?\\)?\\)?"
